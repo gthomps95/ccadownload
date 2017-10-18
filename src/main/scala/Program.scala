@@ -127,10 +127,11 @@ object Program extends App with LazyLogging {
   def writeSummaryCsv(summaries: ListBuffer[ClientSummary]): Unit = {
     val summaryFile = new File(s"$basedir/summary.csv")
     val pw = new PrintWriter(new FileWriter(summaryFile, true))
-    pw.println("id,clinician,short,first,middle,last,birth,marital,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
+    pw.println("id,active,clinician,short,first,middle,last,birth,marital,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
 
     for (summary <- summaries) {
       pw.print(getForCsv(Some(summary.client.id)))
+      pw.print(getForCsv(Some(s"${summary.isActiveAfter}")))
       pw.print(getForCsv(summary.client.clinician))
       pw.print(getForCsv(summary.general.shortname))
       pw.print(getForCsv(summary.general.first))
