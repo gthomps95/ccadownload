@@ -32,7 +32,7 @@ object Program extends App with LazyLogging {
   var clients = buildClientList(new File("/Volumes/USB DISK/CCA_Data.json"))
   clients = ClientScrubber.fixClinicianNames(clients)
   clients = ClientScrubber.fixClientNames(clients)
-  println(clients.length)
+  logger.info(s"${clients.length}")
 
   clients = getClients
   //printStats
@@ -63,12 +63,12 @@ object Program extends App with LazyLogging {
     //for (client <- clients.filter(c => c.id == "PPT21226")) {
     //for (client <- clients.filter(c => c.id == "PPT4810")) {
     //for (client <- clients.filter(c => c.id == "PPT18042")) {
-    for (client <- scala.util.Random.shuffle(clients).take(100)) {
+    for (client <- scala.util.Random.shuffle(clients).take(5)) {
     //for (client <- clients) {
       val clientDir = ClientDir.get(client)
 
       try {
-        println(client.id)
+        logger.info(client.id)
 
         sw = Stopwatch.createStarted()
 
