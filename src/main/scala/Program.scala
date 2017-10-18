@@ -64,7 +64,7 @@ object Program extends App with LazyLogging {
     //for (client <- clients.filter(c => c.id == "PPT21226")) {
     //for (client <- clients.filter(c => c.id == "PPT4810")) {
     //for (client <- clients.filter(c => c.id == "PPT18042")) {
-    for (client <- scala.util.Random.shuffle(clients).take(100)) {
+    for (client <- scala.util.Random.shuffle(clients).take(1000)) {
     //for (client <- clients) {
       val clientDir = ClientDir.get(client)
 
