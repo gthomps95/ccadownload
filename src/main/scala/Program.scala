@@ -32,10 +32,10 @@ object Program extends App with LazyLogging {
   var clients = buildClientList(new File("/Volumes/USB DISK/CCA_Data.json"))
   clients = ClientScrubber.fixClinicianNames(clients)
   clients = ClientScrubber.fixClientNames(clients)
-  logger.info(s"${clients.length}")
 
-  clients = getClients
-  //printStats
+  //printStats(clients)
+  clients = getClients(clients)
+  logger.info(s"${clients.length}")
 
   if (args.length < 2)
     throw new Exception("username and password not supplied.")
@@ -55,6 +55,7 @@ object Program extends App with LazyLogging {
     login(args(0), args(1))
 
     var sw = Stopwatch.createStarted()
+    var count = 0
 
     //for (client <- clients.filter(c => c.id == "PPT21885")) {
     //for (client <- clients.filter(c => c.id == "PPT21885")) {
@@ -63,12 +64,13 @@ object Program extends App with LazyLogging {
     //for (client <- clients.filter(c => c.id == "PPT21226")) {
     //for (client <- clients.filter(c => c.id == "PPT4810")) {
     //for (client <- clients.filter(c => c.id == "PPT18042")) {
-    for (client <- scala.util.Random.shuffle(clients).take(5)) {
+    for (client <- scala.util.Random.shuffle(clients).take(100)) {
     //for (client <- clients) {
       val clientDir = ClientDir.get(client)
 
       try {
-        logger.info(client.id)
+        count += 1
+        logger.info(s"${client.id} - $count")
 
         sw = Stopwatch.createStarted()
 
@@ -106,13 +108,13 @@ object Program extends App with LazyLogging {
 
         summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact))
         //writeControlSuccess(client, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
-        writeControlSuccess(client, isActiveBefore, isActiveAfter, sw, general, contact, provider, Seq[BillingRecord](), Seq[NoteRecord](), Seq[AppointmentRecord]())
+        writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, Seq[BillingRecord](), Seq[NoteRecord](), Seq[AppointmentRecord]())
       }
       catch {
         case e: Exception =>
           sw.stop()
           logger.error(s"Error in client ${client.id}.", e)
-          writeControlError(client, sw, e)
+          writeControlError(count, client, sw, e)
       }
     }
 
@@ -170,18 +172,18 @@ object Program extends App with LazyLogging {
     text + (if (includeComma) "," else "")
   }
 
-  def writeControlSuccess(client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
+  def writeControlSuccess(count: Int, client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
                           billRecords: Seq[BillingRecord], noteRecords: Seq[NoteRecord],
                           apptRecords: Seq[AppointmentRecord]): Unit = {
     val pw = new PrintWriter(new FileWriter(controlFile, true))
-    pw.println(s"${client.id}, $isActiveBefore, $isActiveAfter, ${sw.elapsed(TimeUnit.SECONDS)}, success, ${billRecords.length}, ${noteRecords.length}, ${apptRecords.length}, ")
+    pw.println(s"$count, ${client.id}, $isActiveBefore, $isActiveAfter, ${sw.elapsed(TimeUnit.SECONDS)}, success, ${billRecords.length}, ${noteRecords.length}, ${apptRecords.length}, ")
     pw.flush()
     pw.close()
   }
 
-  def writeControlError(client: Client, sw: Stopwatch, e: Exception): Unit = {
+  def writeControlError(count: Int, client: Client, sw: Stopwatch, e: Exception): Unit = {
     val pw = new PrintWriter(new FileWriter(controlFile, true))
-    pw.println(s"${client.id}, , , ${sw.elapsed(TimeUnit.SECONDS)}, error, 0, 0, 0, ${e.getMessage}" )
+    pw.println(s"$count ${client.id}, , , ${sw.elapsed(TimeUnit.SECONDS)}, error, 0, 0, 0, ${e.getMessage}" )
     pw.flush()
     pw.close()
   }
@@ -208,7 +210,7 @@ object Program extends App with LazyLogging {
     loginButton.click()
   }
 
-  private def getClients: Seq[Client] = {
+  private def getClients(clients: Seq[Client]): Seq[Client] = {
     val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
     clients.filter(c => include.contains(c.clinician.getOrElse("")))
 
@@ -216,7 +218,7 @@ object Program extends App with LazyLogging {
     //clients.filter(c => test.contains(c.id))
   }
 
-  private def printStats = {
+  private def printStats(clients: Seq[Client]) = {
     val exclude = Source.fromFile("/Volumes/USB DISK/exclude.txt").getLines().toSeq
     val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
     val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
@@ -235,34 +237,27 @@ object Program extends App with LazyLogging {
     println(included.length)
     println(totest.length)
 
-    val excc = scala.collection.mutable.Set[String]()
-    excluded.foreach(c => excc.add(c.clinician.getOrElse("")))
+    val excc = excluded.groupBy(c => c.clinician.getOrElse(""))
+    val nexcc = notexcluded.groupBy(c => c.clinician.getOrElse(""))
+    val incc = included.groupBy(c => c.clinician.getOrElse(""))
+    val nincc = notincluded.groupBy(c => c.clinician.getOrElse(""))
 
-    val nexcc = scala.collection.mutable.Set[String]()
-    notexcluded.foreach(c => nexcc.add(c.clinician.getOrElse("")))
-
-    val incc = scala.collection.mutable.Set[String]()
-    included.foreach(c => incc.add(c.clinician.getOrElse("")))
-
-    val nincc = scala.collection.mutable.Set[String]()
-    notincluded.foreach(c => nincc.add(c.clinician.getOrElse("")))
-
-    println(s"excluded ${excc.size}")
-    println(s"not excluded ${nexcc.size}")
-    println(s"included ${incc.size}")
-    println(s"not included ${nincc.size}")
+    println(s"excluded ${excc.keys.size}")
+    println(s"not excluded ${nexcc.keys.size}")
+    println(s"included ${incc.keys.size}")
+    println(s"not included ${nincc.keys.size}")
 
     println("Excluded ****************************************")
-    excc.foreach(println)
+    excc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
     println("Not excluded ****************************************")
-    nexcc.foreach(println)
+    nexcc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
     println("Included ****************************************")
-    incc.foreach(println)
+    incc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
     println("Not included ****************************************")
-    nincc.foreach(println)
+    nincc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
     val blank = clients.filter(c => c.clinician.getOrElse("") == "")
     println(blank.length)
