@@ -9,12 +9,18 @@ import org.openqa.selenium.remote.{DesiredCapabilities, RemoteWebDriver}
 
 import scala.io.Source
 import WebDriverUtils._
+import StringUtils._
 import com.google.common.base.Stopwatch
 import play.api.libs.json._
 
 import scala.collection.mutable.ListBuffer
 
 object Program extends App with LazyLogging {
+  val downloadAll = true
+  val printStats = false
+  val allClients = false
+  val clientCount = 10
+
   implicit val clientFormat = Json.format[Client]
   implicit val generalFormat = Json.writes[ClientGeneral]
   implicit val contactFormat = Json.writes[ClientContact]
@@ -22,6 +28,13 @@ object Program extends App with LazyLogging {
   implicit val billFormat = Json.writes[BillingRecord]
   implicit val noteFormat = Json.writes[NoteRecord]
   implicit val apptFormat = Json.writes[AppointmentRecord]
+
+  implicit val historyFormat = Json.writes[History]
+  implicit val diagnosisCodeFormat = Json.writes[DiagnosisCode]
+  implicit val diagnosisFormat = Json.writes[Diagnosis]
+  implicit val allDiagnosisFormat = Json.writes[AllDiagnosis]
+  implicit val treatmentPlanFormat = Json.writes[TreatmentPlan]
+
   implicit val summaryFormat = Json.writes[ClientSummary]
 
   val now = LocalDateTime.now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
@@ -33,7 +46,8 @@ object Program extends App with LazyLogging {
   clients = ClientScrubber.fixClinicianNames(clients)
   clients = ClientScrubber.fixClientNames(clients)
 
-  //printStats(clients)
+  if (printStats) printStats
+
   clients = getClients(clients)
   logger.info(s"${clients.length}")
 
@@ -58,14 +72,7 @@ object Program extends App with LazyLogging {
     var count = 0
 
     //for (client <- clients.filter(c => c.id == "PPT21885")) {
-    //for (client <- clients.filter(c => c.id == "PPT21885")) {
-    //for (client <- clients.filter(c => c.id == "PPT12721")) {
-    //for (client <- clients.filter(c => c.id == "PPT5240")) {
-    //for (client <- clients.filter(c => c.id == "PPT21226")) {
-    //for (client <- clients.filter(c => c.id == "PPT4810")) {
-    //for (client <- clients.filter(c => c.id == "PPT18042")) {
-    for (client <- scala.util.Random.shuffle(clients).take(1000)) {
-    //for (client <- clients) {
+    for (client <- scala.util.Random.shuffle(clients).take(clientCount)) {
       val clientDir = ClientDir.get(client)
 
       try {
@@ -87,18 +94,21 @@ object Program extends App with LazyLogging {
         val provider = ClientProviderBuilder.build(driver, client)
         new PrintWriter(s"$clientDir/provider.json") {write(Json.prettyPrint(Json.toJson(provider))); close()}
 
-        //val billRecords = BillingRecordBuilder.build(driver, client)
-        //BillingRecordDownloadPdf.download(driver, billRecords)
-        //new PrintWriter(s"$clientDir/billing.json") {write(Json.prettyPrint(Json.toJson(billRecords))); close()}
+        val billRecords = if (downloadAll) BillingRecordBuilder.build(driver, client) else List[BillingRecord]()
+        BillingRecordDownloadPdf.download(driver, billRecords)
+        new PrintWriter(s"$clientDir/billing.json") {write(Json.prettyPrint(Json.toJson(billRecords))); close()}
+        BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
 
-        //var noteRecords = NoteRecordBuilder.build(driver, client)
-        //noteRecords = NoteRecordDownloader.download(driver, noteRecords)
-        //new PrintWriter(s"$clientDir/notes.json") {write(Json.prettyPrint(Json.toJson(noteRecords))); close()}
+        var noteRecords = if (downloadAll) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
+        noteRecords = NoteRecordDownloader.download(driver, noteRecords)
+        new PrintWriter(s"$clientDir/notes.json") {write(Json.prettyPrint(Json.toJson(noteRecords))); close()}
+        NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
 
-        //val apptRecords = AppointmentRecordBuilder.build(driver, client)
-        //new PrintWriter(s"$clientDir/appt.json") {write(Json.prettyPrint(Json.toJson(apptRecords))); close()}
+        val apptRecords = if (downloadAll) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
+        new PrintWriter(s"$clientDir/appt.json") {write(Json.prettyPrint(Json.toJson(apptRecords))); close()}
+        AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
 
-        TreatmentPlan.downloadTreatmenPlan(driver, client)
+        val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
 
         if (!isActiveBefore)
           ClientActivate.deactivate(driver, client)
@@ -106,9 +116,8 @@ object Program extends App with LazyLogging {
 
         sw.stop()
 
-        summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact))
-        //writeControlSuccess(client, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
-        writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, Seq[BillingRecord](), Seq[NoteRecord](), Seq[AppointmentRecord]())
+        summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact, treatmentPlan))
+        writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
       }
       catch {
         case e: Exception =>
@@ -128,49 +137,52 @@ object Program extends App with LazyLogging {
 
   def writeSummaryCsv(summaries: ListBuffer[ClientSummary]): Unit = {
     val summaryFile = new File(s"$basedir/summary.csv")
-    val pw = new PrintWriter(new FileWriter(summaryFile, true))
-    pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
+    writeSummaryCsv(summaryFile, summaries)
+
+    val grouped = summaries.groupBy(cs => cs.client.clinician.getOrElse(""))
+    grouped.foreach(g => {
+      val file = new File(s"$basedir/${g._1}/${g._1} - summary.csv")
+      writeSummaryCsv(file, g._2)
+    })
+  }
+
+  def writeSummaryCsv(dest: File, summaries: ListBuffer[ClientSummary]): Unit = {
+    val pw = new PrintWriter(new FileWriter(dest, true))
+    pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,ssn,diagcode,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
 
     for (summary <- summaries) {
-      pw.print(getForCsv(Some(summary.client.id)))
-      pw.print(getForCsv(Some(s"${summary.isActiveAfter}")))
-      pw.print(getForCsv(summary.client.clinician))
-      pw.print(getForCsv(summary.general.shortname))
-      pw.print(getForCsv(summary.general.first))
-      pw.print(getForCsv(summary.general.middle))
-      pw.print(getForCsv(summary.general.last))
-      pw.print(getForCsv(summary.general.getBirthDate))
-      pw.print(getForCsv(summary.general.gender))
-      pw.print(getForCsv(summary.general.marital))
-      pw.print(getForCsv(summary.general.address1))
-      pw.print(getForCsv(summary.general.address2))
-      pw.print(getForCsv(summary.general.city))
-      pw.print(getForCsv(summary.general.state))
-      pw.print(getForCsv(summary.general.zip))
-      pw.print(getForCsv(summary.contact.cell))
-      pw.print(getForCsv(summary.contact.work))
-      pw.print(getForCsv(summary.contact.home))
-      pw.print(getForCsv(summary.contact.email))
-      pw.print(getForCsv(summary.contact.emails))
-      pw.print(getForCsv(summary.contact.sms))
-      pw.print(getForCsv(summary.contact.emergencyName))
-      pw.print(getForCsv(summary.contact.emergencyPhone))
-      pw.print(getForCsv(summary.contact.emergencyComments))
-      pw.print(getForCsv(summary.general.comments))
+      pw.print(Some(summary.client.id).getForCsv())
+      pw.print(Some(s"${summary.isActiveAfter}").getForCsv())
+      pw.print(summary.client.clinician.getForCsv())
+      pw.print(summary.general.shortname.getForCsv())
+      pw.print(summary.general.first.getForCsv())
+      pw.print(summary.general.middle.getForCsv())
+      pw.print(summary.general.last.getForCsv())
+      pw.print(summary.general.getBirthDate.getForCsv())
+      pw.print(summary.general.gender.getForCsv())
+      pw.print(summary.general.marital.getForCsv())
+      pw.print(summary.general.ssn.getForCsv())
+      pw.print(summary.treatmentPlan.flatMap(_.getIcd9Codes).getForCsv())
+      pw.print(summary.general.address1.getForCsv())
+      pw.print(summary.general.address2.getForCsv())
+      pw.print(summary.general.city.getForCsv())
+      pw.print(summary.general.state.getForCsv())
+      pw.print(summary.general.zip.getForCsv())
+      pw.print(summary.contact.cell.getForCsv())
+      pw.print(summary.contact.work.getForCsv())
+      pw.print(summary.contact.home.getForCsv())
+      pw.print(summary.contact.email.getForCsv())
+      pw.print(summary.contact.emails.getForCsv())
+      pw.print(summary.contact.sms.getForCsv())
+      pw.print(summary.contact.emergencyName.getForCsv())
+      pw.print(summary.contact.emergencyPhone.getForCsv())
+      pw.print(summary.contact.emergencyComments.getForCsv())
+      pw.print(summary.general.comments.getForCsv(false))
       pw.println()
     }
 
     pw.flush()
     pw.close()
-  }
-
-  private def getForCsv(value: Option[String], includeComma: Boolean = true): String = {
-    val text = value match {
-      case None => ""
-      case Some(s) => s.replace(",", " ").replace("\n", " ").replace("\t", " ").split(" ").map(_.trim).filter(!_.isEmpty).mkString(" ")
-    }
-
-    text + (if (includeComma) "," else "")
   }
 
   def writeControlSuccess(count: Int, client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
@@ -212,11 +224,13 @@ object Program extends App with LazyLogging {
   }
 
   private def getClients(clients: Seq[Client]): Seq[Client] = {
-    val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
-    clients.filter(c => include.contains(c.clinician.getOrElse("")))
-
-    //val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
-    //clients.filter(c => test.contains(c.id))
+    if (allClients ) {
+      val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
+      clients.filter(c => include.contains(c.clinician.getOrElse("")))
+    } else {
+      val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
+      clients.filter(c => test.contains(c.id))
+    }
   }
 
   private def printStats(clients: Seq[Client]) = {
@@ -270,4 +284,4 @@ object Program extends App with LazyLogging {
   }
 }
 
-case class ClientSummary(client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, general: ClientGeneral, provider: ClientProvider, contact: ClientContact)
+case class ClientSummary(client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, general: ClientGeneral, provider: ClientProvider, contact: ClientContact, treatmentPlan: Option[TreatmentPlan])

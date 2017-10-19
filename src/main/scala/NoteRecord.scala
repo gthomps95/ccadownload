@@ -1,10 +1,11 @@
-import java.io.File
+import java.io.{File, FileWriter, PrintWriter}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 import org.openqa.selenium.remote.RemoteWebDriver
 
 import scala.collection.JavaConverters._
+import StringUtils._
 import WebDriverUtils._
 import org.apache.commons.io.FilenameUtils
 
@@ -75,6 +76,27 @@ object NoteRecordBuilder {
   }
 }
 
+object NoteRecordOutput {
+  def output(dest: File, records: Seq[NoteRecord]): Unit = {
+    val pw = new PrintWriter(new FileWriter(dest, true))
+    pw.println("id,date,title,form,deleted,result")
+
+    for (record <- records) {
+      pw.print(record.id.getForCsv())
+      pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
+      pw.print(record.title.getForCsv())
+      pw.print(record.form.getForCsv())
+      pw.print(Some(s"${record.deleted}").getForCsv())
+      pw.print(record.downloadResult.getForCsv(false))
+      pw.println()
+    }
+
+    pw.flush()
+    pw.close()
+  }
+}
+
+
 object NoteRecordDownloader {
   private val extPattern = "[0-9]([A-Za-z]+)\\?".r
 
@@ -108,6 +130,11 @@ object NoteRecordDownloader {
         if (!filename.contains(".") && extPattern.findAllIn(url).matchData.nonEmpty) {
           val ext = extPattern.findAllIn(url).group(1)
           filename = s"$filename.$ext"
+        }
+
+        filename = record.date match {
+          case None => filename
+          case Some(d) => s"${DateTimeFormatter.ofPattern("yyyy-MM-dd").format(d)} - $filename"
         }
 
         val notesDir = new File(s"$clientDir/notes")

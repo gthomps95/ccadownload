@@ -1,9 +1,11 @@
+import java.io.{File, FileWriter, PrintWriter}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 import org.openqa.selenium.remote.RemoteWebDriver
 
 import scala.collection.JavaConverters._
+import StringUtils._
 import WebDriverUtils._
 
 case class AppointmentRecord(client: Client,
@@ -67,3 +69,24 @@ object AppointmentRecordBuilder {
 }
 
 case class PathAndType(atype: String, path: String)
+
+object AppointmentRecordOutput {
+  def output(dest: File, records: Seq[AppointmentRecord]): Unit = {
+    val pw = new PrintWriter(new FileWriter(dest, true))
+    pw.println("id,date,time,status,apptType,comments")
+
+    for (record <- records) {
+      pw.print(record.id.getForCsv())
+      pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
+      pw.print(record.time.getForCsv())
+      pw.print(record.status.getForCsv())
+      pw.print(record.apptType.getForCsv())
+      pw.print(record.comments.getForCsv(false))
+      pw.println()
+    }
+
+    pw.flush()
+    pw.close()
+  }
+}
+

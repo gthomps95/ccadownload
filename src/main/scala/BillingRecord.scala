@@ -1,4 +1,4 @@
-import java.io.File
+import java.io.{File, FileWriter, PrintWriter}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -6,6 +6,7 @@ import org.openqa.selenium.remote.RemoteWebDriver
 
 import scala.collection.JavaConverters._
 import WebDriverUtils._
+import StringUtils._
 
 case class BillingRecord(client: Client,
                          id: Option[String] = None,
@@ -42,6 +43,24 @@ object BillingRecordBuilder {
     }
 
     BillingRecord(client = client, id = id, date = date, url = url, description = desc, amount = amt)
+  }
+}
+
+object BillingRecordOutput {
+  def output(dest: File, records: Seq[BillingRecord]): Unit = {
+    val pw = new PrintWriter(new FileWriter(dest, true))
+    pw.println("id,date,description,amount")
+
+    for (record <- records) {
+      pw.print(record.id.getForCsv())
+      pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
+      pw.print(record.description.getForCsv())
+      pw.print(record.amount.getForCsv(false))
+      pw.println()
+    }
+
+    pw.flush()
+    pw.close()
   }
 }
 
