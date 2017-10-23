@@ -37,8 +37,13 @@ object FileDownloader extends LazyLogging {
       out = Some(new BufferedOutputStream(new FileOutputStream(download.destFile, false)))
       val os = out.get
 
-      val byteArray = Stream.continually(is.read()).takeWhile(byte => byte != -1).map(_.toByte).toArray
-      os.write(byteArray)
+      val buffer = new Array[Byte](4096)
+
+      Iterator
+        .continually(is.read(buffer))
+        .takeWhile(_ != -1)
+        .foreach(read => os.write(buffer, 0, read))
+
       true
     }
     catch {

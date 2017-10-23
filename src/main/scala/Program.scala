@@ -28,28 +28,19 @@ object Program extends App with LazyLogging {
   implicit val billFormat = Json.writes[BillingRecord]
   implicit val noteFormat = Json.writes[NoteRecord]
   implicit val apptFormat = Json.writes[AppointmentRecord]
-
   implicit val historyFormat = Json.writes[History]
   implicit val diagnosisCodeFormat = Json.writes[DiagnosisCode]
   implicit val diagnosisFormat = Json.writes[Diagnosis]
   implicit val allDiagnosisFormat = Json.writes[AllDiagnosis]
   implicit val treatmentPlanFormat = Json.writes[TreatmentPlan]
-
   implicit val summaryFormat = Json.writes[ClientSummary]
 
   val now = LocalDateTime.now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
   val basedir = s"/Volumes/USB DISK/CCA/download_$now"
+  new File(basedir).mkdir()
+
   val controlFile = new File(s"$basedir/control.csv")
   ClientDir.setBasedir(basedir)
-
-  var clients = buildClientList(new File("/Volumes/USB DISK/CCA_Data.json"))
-  clients = ClientScrubber.fixClinicianNames(clients)
-  clients = ClientScrubber.fixClientNames(clients)
-
-  if (printStats) printStats
-
-  clients = getClients(clients)
-  logger.info(s"${clients.length}")
 
   if (args.length < 2)
     throw new Exception("username and password not supplied.")
@@ -67,6 +58,13 @@ object Program extends App with LazyLogging {
 
   try {
     login(args(0), args(1))
+
+    var clients = ClientList.download(driver, basedir)
+
+    if (printStats) printStats
+
+    clients = getClients(clients)
+    logger.info(s"${clients.length}")
 
     var sw = Stopwatch.createStarted()
     var count = 0
@@ -199,18 +197,6 @@ object Program extends App with LazyLogging {
     pw.println(s"$count ${client.id}, , , ${sw.elapsed(TimeUnit.SECONDS)}, error, 0, 0, 0, ${e.getMessage}" )
     pw.flush()
     pw.close()
-  }
-
-  def buildClientList(file: File): Seq[Client] = {
-    implicit val clientReads = Json.reads[Client]
-    implicit val searchReads = Json.reads[Search]
-
-    val json = Json.parse(Source.fromFile(file).getLines().mkString)
-    val jsResult = Json.fromJson[Search](json)
-    jsResult match {
-      case JsSuccess(s: Search, _) => s.results
-      case e: JsError => throw new Exception(e.toString)
-    }
   }
 
   def login(username: String, password: String): Unit = {
