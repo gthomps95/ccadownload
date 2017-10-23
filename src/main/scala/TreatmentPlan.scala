@@ -43,7 +43,7 @@ object TreatmentPlan {
     val clientDir = ClientDir.get(client)
     val file = new File(s"$clientDir/treatment_plan.json")
     val url = s"https://office.mhpoffice.com/office/clients/treatment_plan?client=${client.id}"
-    val download = FileDownload(file, url)
+    val download = FileDownload(file, url, Some(client.id))
 
     FileDownloader.downloadFile(driver, download)
 

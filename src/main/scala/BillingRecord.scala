@@ -87,7 +87,7 @@ object BillingRecordDownloadPdf {
 
     val filename = "billing_invoice.pdf"
 
-    val dl = FileDownload(new File(s"${dir.getAbsolutePath}/$filename"), url)
+    val dl = FileDownload(new File(s"${dir.getAbsolutePath}/$filename"), url, Some(record.client.id))
     Some(FileDownloader.downloadFile(driver, dl))
   }
 }

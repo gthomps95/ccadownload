@@ -4,22 +4,28 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.LazyLogging
-import org.openqa.selenium.chrome.ChromeDriverService
-import org.openqa.selenium.remote.{DesiredCapabilities, RemoteWebDriver}
+import org.openqa.selenium.remote.RemoteWebDriver
 
 import scala.io.Source
-import WebDriverUtils._
 import StringUtils._
 import com.google.common.base.Stopwatch
 import play.api.libs.json._
 
-import scala.collection.mutable.ListBuffer
+import scala.concurrent.ExecutionContext
+
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
+
 
 object Program extends App with LazyLogging {
-  val downloadAll = false
+  val downloadAllData = false
   val printStats = false
-  val allClients = false
-  val clientCount = 2
+  val allClients = true
+  val clientCount = 1000
+  val threadCount = 4
+
+  val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
+  implicit val ec = ExecutionContext.fromExecutor(ex)
 
   implicit val clientFormat = Json.format[Client]
   implicit val generalFormat = Json.writes[ClientGeneral]
@@ -48,117 +54,109 @@ object Program extends App with LazyLogging {
   execute(args(0), args(1))
 
   private def execute(username: String, password: String) = {
-    val service = startService()
-    val driver = startDriver(service)
-    val summaries = scala.collection.mutable.ListBuffer[ClientSummary]()
-
+    implicit val pool = new DriverPool(args(0), args(1))
     try {
-      login(driver, username, password)
+      val sw = Stopwatch.createStarted()
 
-      var clients = ClientList.download(driver, basedir)
+      var clients = ClientList.download(basedir)
 
       if (printStats) printStats
 
       clients = getClients(clients)
       logger.info(s"${clients.length}")
 
-      var sw = Stopwatch.createStarted()
-      var count = 0
+      val summaryFutures = for (client <- scala.util.Random.shuffle(clients).take(clientCount).zipWithIndex)
+        yield Future { executeClient(client._1, client._2 + 1) }
 
-      //for (client <- clients.filter(c => c.id == "PPT21885")) {
-      for (client <- scala.util.Random.shuffle(clients).take(clientCount)) {
-        val clientDir = ClientDir.get(client)
-
-        try {
-          count += 1
-          logger.info(s"${client.id} - $count")
-
-          sw = Stopwatch.createStarted()
-
-          val isActiveBefore = ClientActivate.isActive(driver, client)
-          if (!isActiveBefore)
-            ClientActivate.activate(driver, client)
-
-          val general = ClientGeneralBuilder.build(driver, client)
-          new PrintWriter(s"$clientDir/general.json") {
-            write(Json.prettyPrint(Json.toJson(general))); close()
-          }
-
-          val contact = ClientContactBuilder.build(driver, client)
-          new PrintWriter(s"$clientDir/contact.json") {
-            write(Json.prettyPrint(Json.toJson(contact))); close()
-          }
-
-          val provider = ClientProviderBuilder.build(driver, client)
-          new PrintWriter(s"$clientDir/provider.json") {
-            write(Json.prettyPrint(Json.toJson(provider))); close()
-          }
-
-          val billRecords = if (downloadAll) BillingRecordBuilder.build(driver, client) else List[BillingRecord]()
-          BillingRecordDownloadPdf.download(driver, billRecords)
-          new PrintWriter(s"$clientDir/billing.json") {
-            write(Json.prettyPrint(Json.toJson(billRecords))); close()
-          }
-          BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
-
-          var noteRecords = if (downloadAll) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
-          noteRecords = NoteRecordDownloader.download(driver, noteRecords)
-          new PrintWriter(s"$clientDir/notes.json") {
-            write(Json.prettyPrint(Json.toJson(noteRecords))); close()
-          }
-          NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
-
-          val apptRecords = if (downloadAll) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
-          new PrintWriter(s"$clientDir/appt.json") {
-            write(Json.prettyPrint(Json.toJson(apptRecords))); close()
-          }
-          AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
-
-          val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
-
-          if (!isActiveBefore)
-            ClientActivate.deactivate(driver, client)
-          val isActiveAfter = ClientActivate.isActive(driver, client)
-
-          sw.stop()
-
-          summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact, treatmentPlan))
-          writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
-        }
-        catch {
-          case e: Exception =>
-            sw.stop()
-            logger.error(s"Error in client ${client.id}.", e)
-            writeControlError(count, client, sw, e)
-        }
-      }
+      val summaries = Await.result(Future.sequence(summaryFutures), Duration.Inf)
 
       new PrintWriter(s"$basedir/summary.json") {
         write(Json.prettyPrint(Json.toJson(summaries))); close()
       }
-      writeSummaryCsv(summaries)
 
+      writeSummaryCsv(summaries.filter(_.isSuccess))
+
+      sw.stop()
+      logger.info(s"${summaries.length} executed in ${sw.elapsed(TimeUnit.SECONDS)} seconds.")
     } finally {
-      driver.quit()
-      service.stop()
+      pool.quitAll()
+      ex.shutdown()
     }
   }
 
-  private def startService() = {
-    val service = new ChromeDriverService.Builder()
-      .usingDriverExecutable(new File("/Users/gthompson/bin/chromedriver"))
-      .usingAnyFreePort()
-      .build()
+  private def executeClient(client: Client, count: Int)(implicit pool: DriverPool): ClientSummary = {
+    val clientDir = ClientDir.get(client)
+    val sw = Stopwatch.createStarted()
+    var driverO: Option[RemoteWebDriver] = None
+    val summary =
+      try {
+        driverO = Some(pool.get)
+        val driver = driverO.get
+        logger.info(s"Starting ${client.id} - $count")
 
-    service.start()
-    service
+        val isActiveBefore = ClientActivate.isActive(driver, client)
+        if (!isActiveBefore)
+          ClientActivate.activate(driver, client)
+
+        val general = ClientGeneralBuilder.build(driver, client)
+        new PrintWriter(s"$clientDir/general.json") {
+          write(Json.prettyPrint(Json.toJson(general))); close()
+        }
+
+        val contact = ClientContactBuilder.build(driver, client)
+        new PrintWriter(s"$clientDir/contact.json") {
+          write(Json.prettyPrint(Json.toJson(contact))); close()
+        }
+
+        val provider = ClientProviderBuilder.build(driver, client)
+        new PrintWriter(s"$clientDir/provider.json") {
+          write(Json.prettyPrint(Json.toJson(provider))); close()
+        }
+
+        val billRecords = if (downloadAllData) BillingRecordBuilder.build(driver, client) else List[BillingRecord]()
+        BillingRecordDownloadPdf.download(driver, billRecords)
+        new PrintWriter(s"$clientDir/billing.json") {
+          write(Json.prettyPrint(Json.toJson(billRecords))); close()
+        }
+        BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
+
+        var noteRecords = if (downloadAllData) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
+        noteRecords = NoteRecordDownloader.download(driver, noteRecords)
+        new PrintWriter(s"$clientDir/notes.json") {
+          write(Json.prettyPrint(Json.toJson(noteRecords))); close()
+        }
+        NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
+
+        val apptRecords = if (downloadAllData) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
+        new PrintWriter(s"$clientDir/appt.json") {
+          write(Json.prettyPrint(Json.toJson(apptRecords))); close()
+        }
+        AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
+
+        val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
+
+        if (!isActiveBefore)
+          ClientActivate.deactivate(driver, client)
+        val isActiveAfter = ClientActivate.isActive(driver, client)
+
+        sw.stop()
+
+        ClientSummary(client, Some(isActiveBefore), Some(isActiveAfter), Some(general), Some(provider),
+          Some(contact), treatmentPlan, Some(billRecords), Some(noteRecords), Some(apptRecords), isSuccess = true, None, sw.elapsed(TimeUnit.SECONDS))
+      } catch {
+        case e: Exception =>
+          sw.stop()
+          logger.error(s"Error in client ${client.id}.", e)
+          ClientSummary(client, None, None, None, None, None, None, None, None, None, isSuccess = false, Some(e.getMessage), sw.elapsed(TimeUnit.SECONDS))
+      } finally {
+        driverO.foreach(pool.release)
+      }
+
+    writeControl(count, summary)
+    summary
   }
 
-  private def startDriver(service: ChromeDriverService) = {
-    new RemoteWebDriver(service.getUrl, DesiredCapabilities.chrome())
-  }
-
-  private def writeSummaryCsv(summaries: ListBuffer[ClientSummary]): Unit = {
+  private def writeSummaryCsv(summaries: Seq[ClientSummary]): Unit = {
     val summaryFile = new File(s"$basedir/summary.csv")
     writeSummaryCsv(summaryFile, summaries)
 
@@ -168,39 +166,38 @@ object Program extends App with LazyLogging {
       writeSummaryCsv(file, g._2)
     })
   }
-
-  private def writeSummaryCsv(dest: File, summaries: ListBuffer[ClientSummary]): Unit = {
+  private def writeSummaryCsv(dest: File, summaries: Seq[ClientSummary]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
     pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,ssn,diagcode,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
 
-    for (summary <- summaries) {
+    for (summary <- summaries.filter(_.isSuccess)) {
       pw.print(Some(summary.client.id).getForCsv())
       pw.print(Some(s"${summary.isActiveAfter}").getForCsv())
       pw.print(summary.client.clinician.getForCsv())
-      pw.print(summary.general.shortname.getForCsv())
-      pw.print(summary.general.first.getForCsv())
-      pw.print(summary.general.middle.getForCsv())
-      pw.print(summary.general.last.getForCsv())
-      pw.print(summary.general.getBirthDate.getForCsv())
-      pw.print(summary.general.gender.getForCsv())
-      pw.print(summary.general.marital.getForCsv())
-      pw.print(summary.general.ssn.getForCsv())
+      pw.print(summary.general.get.shortname.getForCsv())
+      pw.print(summary.general.get.first.getForCsv())
+      pw.print(summary.general.get.middle.getForCsv())
+      pw.print(summary.general.get.last.getForCsv())
+      pw.print(summary.general.get.getBirthDate.getForCsv())
+      pw.print(summary.general.get.gender.getForCsv())
+      pw.print(summary.general.get.marital.getForCsv())
+      pw.print(summary.general.get.ssn.getForCsv())
       pw.print(summary.treatmentPlan.flatMap(_.getIcd9Codes).getForCsv())
-      pw.print(summary.general.address1.getForCsv())
-      pw.print(summary.general.address2.getForCsv())
-      pw.print(summary.general.city.getForCsv())
-      pw.print(summary.general.state.getForCsv())
-      pw.print(summary.general.zip.getForCsv())
-      pw.print(summary.contact.cell.getForCsv())
-      pw.print(summary.contact.work.getForCsv())
-      pw.print(summary.contact.home.getForCsv())
-      pw.print(summary.contact.email.getForCsv())
-      pw.print(summary.contact.emails.getForCsv())
-      pw.print(summary.contact.sms.getForCsv())
-      pw.print(summary.contact.emergencyName.getForCsv())
-      pw.print(summary.contact.emergencyPhone.getForCsv())
-      pw.print(summary.contact.emergencyComments.getForCsv())
-      pw.print(summary.general.comments.getForCsv(false))
+      pw.print(summary.general.get.address1.getForCsv())
+      pw.print(summary.general.get.address2.getForCsv())
+      pw.print(summary.general.get.city.getForCsv())
+      pw.print(summary.general.get.state.getForCsv())
+      pw.print(summary.general.get.zip.getForCsv())
+      pw.print(summary.contact.get.cell.getForCsv())
+      pw.print(summary.contact.get.work.getForCsv())
+      pw.print(summary.contact.get.home.getForCsv())
+      pw.print(summary.contact.get.email.getForCsv())
+      pw.print(summary.contact.get.emails.getForCsv())
+      pw.print(summary.contact.get.sms.getForCsv())
+      pw.print(summary.contact.get.emergencyName.getForCsv())
+      pw.print(summary.contact.get.emergencyPhone.getForCsv())
+      pw.print(summary.contact.get.emergencyComments.getForCsv())
+      pw.print(summary.general.get.comments.getForCsv(false))
       pw.println()
     }
 
@@ -208,30 +205,18 @@ object Program extends App with LazyLogging {
     pw.close()
   }
 
-  private def writeControlSuccess(count: Int, client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
-                          billRecords: Seq[BillingRecord], noteRecords: Seq[NoteRecord],
-                          apptRecords: Seq[AppointmentRecord]): Unit = {
-    val pw = new PrintWriter(new FileWriter(controlFile, true))
-    pw.println(s"$count, ${client.id}, $isActiveBefore, $isActiveAfter, ${sw.elapsed(TimeUnit.SECONDS)}, success, ${billRecords.length}, ${noteRecords.length}, ${apptRecords.length}, ")
-    pw.flush()
-    pw.close()
-  }
+  private def writeControl(count: Int, summary: ClientSummary) = {
+    synchronized {
+      val pw = new PrintWriter(new FileWriter(controlFile, true))
+      if (summary.isSuccess) {
+        pw.println(s"$count, ${summary.client.id}, ${summary.isActiveBefore.get}, ${summary.isActiveAfter.get}, ${summary.elapsedSeconds}, success, ${summary.billingRecords.get.length}, ${summary.noteRecords.get.length}, ${summary.apptRecords.get.length}, ")
+      } else {
+        pw.println(s"$count, ${summary.client.id}, , , ${summary.elapsedSeconds}, error, 0, 0, 0, ${summary.errorMessage.get} ")
+      }
 
-  private def writeControlError(count: Int, client: Client, sw: Stopwatch, e: Exception): Unit = {
-    val pw = new PrintWriter(new FileWriter(controlFile, true))
-    pw.println(s"$count ${client.id}, , , ${sw.elapsed(TimeUnit.SECONDS)}, error, 0, 0, 0, ${e.getMessage}" )
-    pw.flush()
-    pw.close()
-  }
-
-  private def login(driver: RemoteWebDriver, username: String, password: String): Unit = {
-    driver.get("https://office.mhpoffice.com/office/login")
-
-    driver.fillField("username", username)
-    driver.fillField("password", password)
-
-    val loginButton = driver.findElementById("loginButton______")
-    loginButton.click()
+      pw.flush()
+      pw.close()
+    }
   }
 
   private def getClients(clients: Seq[Client]): Seq[Client] = {
@@ -295,4 +280,11 @@ object Program extends App with LazyLogging {
   }
 }
 
-case class ClientSummary(client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, general: ClientGeneral, provider: ClientProvider, contact: ClientContact, treatmentPlan: Option[TreatmentPlan])
+case class ClientSummary(client: Client, isActiveBefore: Option[Boolean], isActiveAfter: Option[Boolean],
+                         general: Option[ClientGeneral], provider: Option[ClientProvider], contact: Option[ClientContact],
+                         treatmentPlan: Option[TreatmentPlan],
+                         billingRecords: Option[Seq[BillingRecord]], noteRecords: Option[Seq[NoteRecord]],
+                         apptRecords: Option[Seq[AppointmentRecord]],
+                         isSuccess: Boolean, errorMessage: Option[String] = None,
+                         elapsedSeconds: Long
+                        )

@@ -142,7 +142,7 @@ object NoteRecordDownloader {
         if (!notesDir.exists())
           notesDir.mkdirs()
 
-        val dl = FileDownload(new File(s"${notesDir.getAbsolutePath}/$filename"), url)
+        val dl = FileDownload(new File(s"${notesDir.getAbsolutePath}/$filename"), url, Some(record.client.id))
         val result = if (FileDownloader.downloadFile(driver, dl)) "Success" else "Failure"
         record.copy(downloadResult = Some(result))
     }

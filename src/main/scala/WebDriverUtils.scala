@@ -49,6 +49,11 @@ object WebDriverUtils {
       field.sendKeys(value)
     }
 
+    def checkField(fieldName: String): Unit = {
+      val field = driver.findElementByName(fieldName)
+      field.click()
+    }
+
     def checkGetUrl(url: String): Unit = {
       driver.getCurrentUrl match {
         case `url` =>

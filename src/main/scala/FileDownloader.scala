@@ -4,7 +4,7 @@ import java.net.{HttpURLConnection, URL}
 import com.typesafe.scalalogging.LazyLogging
 import org.openqa.selenium.remote.RemoteWebDriver
 
-case class FileDownload(destFile: File, url: String)
+case class FileDownload(destFile: File, url: String, clientId: Option[String])
 
 object FileDownloader extends LazyLogging {
   def downloadFile(driver: RemoteWebDriver, download: FileDownload): Boolean = {
@@ -27,7 +27,7 @@ object FileDownloader extends LazyLogging {
 
       val status = connection.getResponseCode
       if (status != 200)
-        throw new Exception(s"File download returned status $status, ${download.url}")
+        throw new Exception(s"File download returned status $status, ${download.clientId} - ${download.url}")
 
       //val cd = connection.getHeaderField("Content-Disposition")
       in = Some(connection.getInputStream)
