@@ -16,10 +16,10 @@ import play.api.libs.json._
 import scala.collection.mutable.ListBuffer
 
 object Program extends App with LazyLogging {
-  val downloadAll = true
+  val downloadAll = false
   val printStats = false
   val allClients = false
-  val clientCount = 10
+  val clientCount = 2
 
   implicit val clientFormat = Json.format[Client]
   implicit val generalFormat = Json.writes[ClientGeneral]
@@ -45,95 +45,120 @@ object Program extends App with LazyLogging {
   if (args.length < 2)
     throw new Exception("username and password not supplied.")
 
-  val service = new ChromeDriverService.Builder()
-    .usingDriverExecutable(new File("/Users/gthompson/bin/chromedriver"))
-    .usingAnyFreePort()
-    .build()
+  execute(args(0), args(1))
 
-  service.start()
+  private def execute(username: String, password: String) = {
+    val service = startService()
+    val driver = startDriver(service)
+    val summaries = scala.collection.mutable.ListBuffer[ClientSummary]()
 
-  val driver = new RemoteWebDriver(service.getUrl, DesiredCapabilities.chrome())
+    try {
+      login(driver, username, password)
 
-  val summaries = scala.collection.mutable.ListBuffer[ClientSummary]()
+      var clients = ClientList.download(driver, basedir)
 
-  try {
-    login(args(0), args(1))
+      if (printStats) printStats
 
-    var clients = ClientList.download(driver, basedir)
+      clients = getClients(clients)
+      logger.info(s"${clients.length}")
 
-    if (printStats) printStats
+      var sw = Stopwatch.createStarted()
+      var count = 0
 
-    clients = getClients(clients)
-    logger.info(s"${clients.length}")
+      //for (client <- clients.filter(c => c.id == "PPT21885")) {
+      for (client <- scala.util.Random.shuffle(clients).take(clientCount)) {
+        val clientDir = ClientDir.get(client)
 
-    var sw = Stopwatch.createStarted()
-    var count = 0
+        try {
+          count += 1
+          logger.info(s"${client.id} - $count")
 
-    //for (client <- clients.filter(c => c.id == "PPT21885")) {
-    for (client <- scala.util.Random.shuffle(clients).take(clientCount)) {
-      val clientDir = ClientDir.get(client)
+          sw = Stopwatch.createStarted()
 
-      try {
-        count += 1
-        logger.info(s"${client.id} - $count")
+          val isActiveBefore = ClientActivate.isActive(driver, client)
+          if (!isActiveBefore)
+            ClientActivate.activate(driver, client)
 
-        sw = Stopwatch.createStarted()
+          val general = ClientGeneralBuilder.build(driver, client)
+          new PrintWriter(s"$clientDir/general.json") {
+            write(Json.prettyPrint(Json.toJson(general))); close()
+          }
 
-        val isActiveBefore = ClientActivate.isActive(driver, client)
-        if (!isActiveBefore)
-          ClientActivate.activate(driver, client)
+          val contact = ClientContactBuilder.build(driver, client)
+          new PrintWriter(s"$clientDir/contact.json") {
+            write(Json.prettyPrint(Json.toJson(contact))); close()
+          }
 
-        val general = ClientGeneralBuilder.build(driver, client)
-        new PrintWriter(s"$clientDir/general.json") {write(Json.prettyPrint(Json.toJson(general))); close()}
+          val provider = ClientProviderBuilder.build(driver, client)
+          new PrintWriter(s"$clientDir/provider.json") {
+            write(Json.prettyPrint(Json.toJson(provider))); close()
+          }
 
-        val contact = ClientContactBuilder.build(driver, client)
-        new PrintWriter(s"$clientDir/contact.json") {write(Json.prettyPrint(Json.toJson(contact))); close()}
+          val billRecords = if (downloadAll) BillingRecordBuilder.build(driver, client) else List[BillingRecord]()
+          BillingRecordDownloadPdf.download(driver, billRecords)
+          new PrintWriter(s"$clientDir/billing.json") {
+            write(Json.prettyPrint(Json.toJson(billRecords))); close()
+          }
+          BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
 
-        val provider = ClientProviderBuilder.build(driver, client)
-        new PrintWriter(s"$clientDir/provider.json") {write(Json.prettyPrint(Json.toJson(provider))); close()}
+          var noteRecords = if (downloadAll) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
+          noteRecords = NoteRecordDownloader.download(driver, noteRecords)
+          new PrintWriter(s"$clientDir/notes.json") {
+            write(Json.prettyPrint(Json.toJson(noteRecords))); close()
+          }
+          NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
 
-        val billRecords = if (downloadAll) BillingRecordBuilder.build(driver, client) else List[BillingRecord]()
-        BillingRecordDownloadPdf.download(driver, billRecords)
-        new PrintWriter(s"$clientDir/billing.json") {write(Json.prettyPrint(Json.toJson(billRecords))); close()}
-        BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
+          val apptRecords = if (downloadAll) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
+          new PrintWriter(s"$clientDir/appt.json") {
+            write(Json.prettyPrint(Json.toJson(apptRecords))); close()
+          }
+          AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
 
-        var noteRecords = if (downloadAll) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
-        noteRecords = NoteRecordDownloader.download(driver, noteRecords)
-        new PrintWriter(s"$clientDir/notes.json") {write(Json.prettyPrint(Json.toJson(noteRecords))); close()}
-        NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
+          val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
 
-        val apptRecords = if (downloadAll) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
-        new PrintWriter(s"$clientDir/appt.json") {write(Json.prettyPrint(Json.toJson(apptRecords))); close()}
-        AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
+          if (!isActiveBefore)
+            ClientActivate.deactivate(driver, client)
+          val isActiveAfter = ClientActivate.isActive(driver, client)
 
-        val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
-
-        if (!isActiveBefore)
-          ClientActivate.deactivate(driver, client)
-        val isActiveAfter = ClientActivate.isActive(driver, client)
-
-        sw.stop()
-
-        summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact, treatmentPlan))
-        writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
-      }
-      catch {
-        case e: Exception =>
           sw.stop()
-          logger.error(s"Error in client ${client.id}.", e)
-          writeControlError(count, client, sw, e)
+
+          summaries.append(ClientSummary(client, isActiveBefore, isActiveAfter, general, provider, contact, treatmentPlan))
+          writeControlSuccess(count, client, isActiveBefore, isActiveAfter, sw, general, contact, provider, billRecords, noteRecords, apptRecords)
+        }
+        catch {
+          case e: Exception =>
+            sw.stop()
+            logger.error(s"Error in client ${client.id}.", e)
+            writeControlError(count, client, sw, e)
+        }
       }
+
+      new PrintWriter(s"$basedir/summary.json") {
+        write(Json.prettyPrint(Json.toJson(summaries))); close()
+      }
+      writeSummaryCsv(summaries)
+
+    } finally {
+      driver.quit()
+      service.stop()
     }
-
-    new PrintWriter(s"$basedir/summary.json") {write(Json.prettyPrint(Json.toJson(summaries))); close()}
-    writeSummaryCsv(summaries)
-
-  } finally {
-    driver.quit()
-    service.stop()
   }
 
-  def writeSummaryCsv(summaries: ListBuffer[ClientSummary]): Unit = {
+  private def startService() = {
+    val service = new ChromeDriverService.Builder()
+      .usingDriverExecutable(new File("/Users/gthompson/bin/chromedriver"))
+      .usingAnyFreePort()
+      .build()
+
+    service.start()
+    service
+  }
+
+  private def startDriver(service: ChromeDriverService) = {
+    new RemoteWebDriver(service.getUrl, DesiredCapabilities.chrome())
+  }
+
+  private def writeSummaryCsv(summaries: ListBuffer[ClientSummary]): Unit = {
     val summaryFile = new File(s"$basedir/summary.csv")
     writeSummaryCsv(summaryFile, summaries)
 
@@ -144,7 +169,7 @@ object Program extends App with LazyLogging {
     })
   }
 
-  def writeSummaryCsv(dest: File, summaries: ListBuffer[ClientSummary]): Unit = {
+  private def writeSummaryCsv(dest: File, summaries: ListBuffer[ClientSummary]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
     pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,ssn,diagcode,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
 
@@ -183,7 +208,7 @@ object Program extends App with LazyLogging {
     pw.close()
   }
 
-  def writeControlSuccess(count: Int, client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
+  private def writeControlSuccess(count: Int, client: Client, isActiveBefore: Boolean, isActiveAfter: Boolean, sw: Stopwatch, general: ClientGeneral, contact: ClientContact, provider: ClientProvider,
                           billRecords: Seq[BillingRecord], noteRecords: Seq[NoteRecord],
                           apptRecords: Seq[AppointmentRecord]): Unit = {
     val pw = new PrintWriter(new FileWriter(controlFile, true))
@@ -192,14 +217,14 @@ object Program extends App with LazyLogging {
     pw.close()
   }
 
-  def writeControlError(count: Int, client: Client, sw: Stopwatch, e: Exception): Unit = {
+  private def writeControlError(count: Int, client: Client, sw: Stopwatch, e: Exception): Unit = {
     val pw = new PrintWriter(new FileWriter(controlFile, true))
     pw.println(s"$count ${client.id}, , , ${sw.elapsed(TimeUnit.SECONDS)}, error, 0, 0, 0, ${e.getMessage}" )
     pw.flush()
     pw.close()
   }
 
-  def login(username: String, password: String): Unit = {
+  private def login(driver: RemoteWebDriver, username: String, password: String): Unit = {
     driver.get("https://office.mhpoffice.com/office/login")
 
     driver.fillField("username", username)
