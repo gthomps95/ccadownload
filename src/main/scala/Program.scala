@@ -21,7 +21,7 @@ object Program extends App with LazyLogging {
   val downloadAllData = false
   val printStats = false
   val allClients = true
-  val clientCount = 1000
+  val clientCount = 5000
   val threadCount = 4
 
   val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
@@ -42,7 +42,7 @@ object Program extends App with LazyLogging {
   implicit val summaryFormat = Json.writes[ClientSummary]
 
   val now = LocalDateTime.now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-  val basedir = s"/Volumes/USB DISK/CCA/download_$now"
+  val basedir = s"/Users/gthompson/CCA/download_$now"
   new File(basedir).mkdir()
 
   val controlFile = new File(s"$basedir/control.csv")
