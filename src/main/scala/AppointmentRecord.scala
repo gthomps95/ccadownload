@@ -13,7 +13,7 @@ case class AppointmentRecord(client: Client,
                              date: Option[LocalDate] = None,
                              time: Option[String] = None,
                              status: Option[String] = None,
-                             apptType: Option[String] = None,
+                             apptType: String,
                              url: Option[String] = None,
                              comments: Option[String] = None
                             )
@@ -21,7 +21,7 @@ case class AppointmentRecord(client: Client,
 object AppointmentRecordBuilder {
   private val idPattern = "(EVT[0-9]+)".r.unanchored
 
-  def build(driver: RemoteWebDriver, client: Client): Seq[AppointmentRecord] = {
+  def build(driver: RemoteWebDriver, client: Client, downloadComments: Boolean): Seq[AppointmentRecord] = {
     driver.checkGetUrl(s"https://office.mhpoffice.com/office/client/${client.id}/schedule#showFuture")
 
     val upcomingRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[5]/div[2]/div").asScala
@@ -32,7 +32,11 @@ object AppointmentRecordBuilder {
 
     val paths = upcomingPaths ++ pastPaths
     val records = for (path <- paths) yield buildRecord(driver, client, path)
-    for (record <- records) yield appendComments(driver, record)
+
+    if (downloadComments)
+      for (record <- records) yield appendComments(driver, record)
+    else
+      records
   }
 
   private def buildRecord(driver: RemoteWebDriver, client: Client, path: PathAndType): AppointmentRecord = {
@@ -49,7 +53,7 @@ object AppointmentRecordBuilder {
       case Some(s) => Some(LocalDate.parse(s.replace("  ", " "), DateTimeFormatter.ofPattern("MMM d, yyyy")))
     }
 
-    AppointmentRecord(client = client, apptType = Some(path.atype), id = id, date = date, url = url, time = time, status = status)
+    AppointmentRecord(client = client, apptType = path.atype, id = id, date = date, url = url, time = time, status = status)
   }
 
   private def appendComments(driver: RemoteWebDriver, record: AppointmentRecord): AppointmentRecord = {
@@ -80,7 +84,7 @@ object AppointmentRecordOutput {
       pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
       pw.print(record.time.getForCsv())
       pw.print(record.status.getForCsv())
-      pw.print(record.apptType.getForCsv())
+      pw.print(Some(record.apptType).getForCsv())
       pw.print(record.comments.getForCsv(false))
       pw.println()
     }

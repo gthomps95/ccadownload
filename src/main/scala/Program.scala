@@ -1,5 +1,5 @@
 import java.io.{File, FileWriter, PrintWriter}
-import java.time.LocalDateTime
+import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
@@ -12,17 +12,19 @@ import com.google.common.base.Stopwatch
 import play.api.libs.json._
 
 import scala.concurrent.ExecutionContext
-
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 
 object Program extends App with LazyLogging {
   val downloadAllData = false
+  val downloadApptData = true
+  val downloadApptComments = false
   val printStats = false
   val allClients = true
-  val clientCount = 5000
-  val threadCount = 4
+  val filterClients = false
+  val clientCount = 20
+  val threadCount = 1
 
   val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
   implicit val ec = ExecutionContext.fromExecutor(ex)
@@ -62,7 +64,7 @@ object Program extends App with LazyLogging {
 
       if (printStats) printStats
 
-      clients = getClients(clients)
+      clients = if (filterClients) getClients(clients) else clients
       logger.info(s"${clients.length}")
 
       val summaryFutures = for (client <- scala.util.Random.shuffle(clients).take(clientCount).zipWithIndex)
@@ -127,7 +129,7 @@ object Program extends App with LazyLogging {
         }
         NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
 
-        val apptRecords = if (downloadAllData) AppointmentRecordBuilder.build(driver, client) else Seq[AppointmentRecord]()
+        val apptRecords = if (downloadAllData || downloadApptData) AppointmentRecordBuilder.build(driver, client, downloadApptComments) else Seq[AppointmentRecord]()
         new PrintWriter(s"$clientDir/appt.json") {
           write(Json.prettyPrint(Json.toJson(apptRecords))); close()
         }
@@ -168,7 +170,7 @@ object Program extends App with LazyLogging {
   }
   private def writeSummaryCsv(dest: File, summaries: Seq[ClientSummary]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
-    pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,ssn,diagcode,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
+    pw.println("id,active,clinician,short,first,middle,last,birth,gender,marital,ssn,diagcode,lastappt,address1,address2,city,state,zip,cell,work,home,email,emailfreq,smsfreq,emergname,emergphone,emergcomments,comments")
 
     for (summary <- summaries.filter(_.isSuccess)) {
       pw.print(Some(summary.client.id).getForCsv())
@@ -183,6 +185,7 @@ object Program extends App with LazyLogging {
       pw.print(summary.general.get.marital.getForCsv())
       pw.print(summary.general.get.ssn.getForCsv())
       pw.print(summary.treatmentPlan.flatMap(_.getIcd9Codes).getForCsv())
+      pw.print(summary.lastApptDate.map(d => d.format(DateTimeFormatter.ofPattern("MM/dd/yyyy"))).getForCsv())
       pw.print(summary.general.get.address1.getForCsv())
       pw.print(summary.general.get.address2.getForCsv())
       pw.print(summary.general.get.city.getForCsv())
@@ -287,4 +290,18 @@ case class ClientSummary(client: Client, isActiveBefore: Option[Boolean], isActi
                          apptRecords: Option[Seq[AppointmentRecord]],
                          isSuccess: Boolean, errorMessage: Option[String] = None,
                          elapsedSeconds: Long
-                        )
+                        ) {
+
+  def lastApptDate: Option[LocalDate] = {
+    apptRecords match {
+      case None => None
+      case Some(records) =>
+        val filtered = records.filter(ap => ap.apptType == "Past").flatMap(ap => ap.date)
+
+        if (filtered.isEmpty)
+          None
+        else
+          Some(filtered.maxBy(_.toEpochDay))
+    }
+  }
+}
