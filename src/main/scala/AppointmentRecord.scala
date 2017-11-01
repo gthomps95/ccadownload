@@ -32,7 +32,7 @@ object AppointmentRecordBuilder {
 
     if (pastRows.isEmpty) {
       pastDiv = 3
-      var pastRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div").asScala
+      pastRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div").asScala
     }
 
     val pastPaths = (1 until pastRows.length + 1).map(index => PathAndType("Past", "//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div[" + index + "]"))
