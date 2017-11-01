@@ -27,8 +27,10 @@ object AppointmentRecordBuilder {
     val upcomingRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[5]/div[2]/div").asScala
     val upcomingPaths = (1 until upcomingRows.length + 1).map(index => PathAndType("Upcoming", "//*[@id=\"content\"]/div[5]/div[3]/div[" + index + "]"))
 
-    val pastRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[5]/div[3]/div").asScala
-    val pastPaths = (1 until pastRows.length + 1).map(index => PathAndType("Past", "//*[@id=\"content\"]/div[5]/div[3]/div[" + index + "]"))
+    val pastDiv = if (upcomingRows.isEmpty) 3 else 5
+
+    val pastRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div").asScala
+    val pastPaths = (1 until pastRows.length + 1).map(index => PathAndType("Past", "//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div[" + index + "]"))
 
     val paths = upcomingPaths ++ pastPaths
     val records = for (path <- paths) yield buildRecord(driver, client, path)
