@@ -22,9 +22,9 @@ object Program extends App with LazyLogging {
   val downloadApptComments = false
   val printStats = false
   val allClients = true
-  val filterClients = false
-  val clientCount = 20
-  val threadCount = 1
+  val filterClients = true
+  val clientCount = 5000
+  val threadCount = 4
 
   val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
   implicit val ec = ExecutionContext.fromExecutor(ex)
@@ -174,7 +174,7 @@ object Program extends App with LazyLogging {
 
     for (summary <- summaries.filter(_.isSuccess)) {
       pw.print(Some(summary.client.id).getForCsv())
-      pw.print(Some(s"${summary.isActiveAfter}").getForCsv())
+      pw.print(Some(summary.isActiveAfter.getOrElse(false).toString).getForCsv())
       pw.print(summary.client.clinician.getForCsv())
       pw.print(summary.general.get.shortname.getForCsv())
       pw.print(summary.general.get.first.getForCsv())
