@@ -19,7 +19,45 @@ case class NoteRecord(client: Client,
                       form: Option[String] = None,
                       deleted: Boolean,
                       downloadResult: Option[String] = None
-                     )
+                     ) {
+
+  private val extPattern = "[0-9]([A-Za-z]+)\\?".r
+
+  def fileName: Option[String] = {
+    documentUrl match {
+      case None => None
+      case Some(dUrl) =>
+
+        var filename = FilenameUtils.getName(dUrl).split("\\?").head
+
+        if (!filename.contains(".")) {
+          filename = filename match {
+            case s if s.toLowerCase.endsWith("pdf") => s"$s.pdf"
+            case s if s.toLowerCase.endsWith("png") => s"$s.png"
+            case s if s.toLowerCase.endsWith("docx") => s"$s.docx"
+            case s if s.toLowerCase.endsWith("doc") => s"$s.doc"
+            case s if s.toLowerCase.endsWith("xlsx") => s"$s.xlsx"
+            case s if s.toLowerCase.endsWith("xls") => s"$s.xls"
+            case s if s.toLowerCase.endsWith("jpeg") => s"$s.jpeg"
+            case s if s.toLowerCase.endsWith("jpg") => s"$s.jpg"
+            case s => s
+          }
+        }
+
+        if (!filename.contains(".") && extPattern.findAllIn(dUrl).matchData.nonEmpty) {
+          val ext = extPattern.findAllIn(dUrl).group(1)
+          filename = s"$filename.$ext"
+        }
+
+        filename = date match {
+          case None => filename
+          case Some(d) => s"${DateTimeFormatter.ofPattern("yyyy-MM-dd").format(d)} - $filename"
+        }
+
+        Some(filename)
+    }
+  }
+}
 
 object NoteRecordBuilder {
   private val idPattern = "([D][0-9]+)".r.unanchored
@@ -80,13 +118,14 @@ object NoteRecordBuilder {
 object NoteRecordOutput {
   def output(dest: File, records: Seq[NoteRecord]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
-    pw.println("id,date,title,form,deleted,result")
+    pw.println("id,date,title,form,filename,deleted,result")
 
     for (record <- records) {
       pw.print(record.id.getForCsv())
       pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
       pw.print(record.title.getForCsv())
       pw.print(record.form.getForCsv())
+      pw.print(record.fileName.getForCsv())
       pw.print(Some(s"${record.deleted}").getForCsv())
       pw.print(record.downloadResult.getForCsv(false))
       pw.println()
@@ -99,7 +138,6 @@ object NoteRecordOutput {
 
 
 object NoteRecordDownloader {
-  private val extPattern = "[0-9]([A-Za-z]+)\\?".r
 
   def download(driver: RemoteWebDriver, records: Seq[NoteRecord]): Seq[NoteRecord] = {
     records.filter(!_.deleted).map(dowloadRecord(driver, _))
@@ -108,42 +146,15 @@ object NoteRecordDownloader {
   def dowloadRecord(driver: RemoteWebDriver, record: NoteRecord): NoteRecord = {
     val clientDir = ClientDir.get(record.client)
 
-    record.documentUrl match {
+    record.fileName match {
       case None => record
-      case Some(url) =>
-
-        var filename = FilenameUtils.getName(url).split("\\?").head
-
-        if (!filename.contains(".")) {
-          filename = filename match {
-            case s if s.toLowerCase.endsWith("pdf") => s"$s.pdf"
-            case s if s.toLowerCase.endsWith("png") => s"$s.png"
-            case s if s.toLowerCase.endsWith("docx") => s"$s.docx"
-            case s if s.toLowerCase.endsWith("doc") => s"$s.doc"
-            case s if s.toLowerCase.endsWith("xlsx") => s"$s.xlsx"
-            case s if s.toLowerCase.endsWith("xls") => s"$s.xls"
-            case s if s.toLowerCase.endsWith("jpeg") => s"$s.jpeg"
-            case s if s.toLowerCase.endsWith("jpg") => s"$s.jpg"
-            case s => s
-          }
-        }
-
-        if (!filename.contains(".") && extPattern.findAllIn(url).matchData.nonEmpty) {
-          val ext = extPattern.findAllIn(url).group(1)
-          filename = s"$filename.$ext"
-        }
-
-        filename = record.date match {
-          case None => filename
-          case Some(d) => s"${DateTimeFormatter.ofPattern("yyyy-MM-dd").format(d)} - $filename"
-        }
-
+      case Some(filename) =>
         val notesDir = new File(s"$clientDir/notes")
 
         if (!notesDir.exists())
           notesDir.mkdirs()
 
-        val dl = FileDownload(new File(s"${notesDir.getAbsolutePath}/$filename"), url, Some(record.client.id))
+        val dl = FileDownload(new File(s"${notesDir.getAbsolutePath}/$filename"), record.documentUrl.get, Some(record.client.id))
         val result = if (FileDownloader.downloadFile(driver, dl)) "Success" else "Failure"
         record.copy(downloadResult = Some(result))
     }
