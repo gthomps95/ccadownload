@@ -1,5 +1,5 @@
 import java.io.{File, FileWriter, PrintWriter}
-import java.time.LocalDate
+import java.time.{LocalDate, Period}
 import java.time.format.DateTimeFormatter
 
 import org.openqa.selenium.remote.RemoteWebDriver
@@ -57,6 +57,7 @@ object AppointmentRecordBuilder {
     val date = dateStr match {
       case None => None
       case Some(s) if s.trim.toLowerCase == "today" => Some(LocalDate.now)
+      case Some(s) if s.trim.toLowerCase == "yesterday" => Some(LocalDate.now.minus(Period.ofDays(1)))
       case Some(s) => Some(LocalDate.parse(s.replace("  ", " "), DateTimeFormatter.ofPattern("MMM d, yyyy")))
     }
 
