@@ -7,7 +7,7 @@ import org.openqa.selenium.remote.{DesiredCapabilities, RemoteWebDriver}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class DriverPool(username: String, password: String) {
+class DriverPool(username: String, password: String, chromeDriverLocation: String) {
 
   def quitAll(): Unit = {
     drivers.foreach(_.quit())
@@ -18,7 +18,7 @@ class DriverPool(username: String, password: String) {
   private val drivers = ListBuffer[RemoteWebDriver]()
   private val services = ListBuffer[ChromeDriverService]()
 
-  private val chromeDriver = new File("/Users/gthompson/bin/chromedriver")
+  private val chromeDriver = new File(chromeDriverLocation)
 
   private def startService() = {
     val service = new ChromeDriverService.Builder()

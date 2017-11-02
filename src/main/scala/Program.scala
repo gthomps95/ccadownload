@@ -15,16 +15,22 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
-
 object Program extends App with LazyLogging {
-  val downloadAllData = false
+  if (args.length < 4)
+    throw new Exception("username password threadCount includefile printStats")
+
+  val username = args(0)
+  val password = args(1)
+  val threadCount = args(2).toInt
+  val includeFile = args(3)
+  val printStats = if (args.length > 4) args(4).toBoolean else false
+
+  val downloadAllData = true
   val downloadApptData = true
-  val downloadApptComments = false
-  val printStats = false
+  val downloadApptComments = true
   val allClients = true
   val filterClients = true
-  val clientCount = 5000
-  val threadCount = 4
+  val clientCount = 50000
 
   val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
   implicit val ec = ExecutionContext.fromExecutor(ex)
@@ -44,27 +50,28 @@ object Program extends App with LazyLogging {
   implicit val summaryFormat = Json.writes[ClientSummary]
 
   val now = LocalDateTime.now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-  val basedir = s"/Users/gthompson/CCA/download_$now"
-  new File(basedir).mkdir()
+  val basedir = s"${System.getProperty("user.home")}/CCA/download_$now"
+  new File(basedir).mkdirs()
 
   val controlFile = new File(s"$basedir/control.csv")
   ClientDir.setBasedir(basedir)
 
-  if (args.length < 2)
-    throw new Exception("username and password not supplied.")
-
-  execute(args(0), args(1))
+  execute(username, password)
 
   private def execute(username: String, password: String) = {
-    implicit val pool = new DriverPool(args(0), args(1))
+    implicit val pool = new DriverPool(username, password, s"${System.getProperty("user.home")}/bin/chromedriver")
     try {
       val sw = Stopwatch.createStarted()
 
       var clients = ClientList.download(basedir)
-
-      if (printStats) printStats
-
       clients = if (filterClients) getClients(clients) else clients
+
+      /*
+      val ids = Array("PPT17104")
+      clients = clients.filter(c => ids.contains(c.id))
+      */
+
+      if (printStats) printStatistics(clients)
       logger.info(s"${clients.length}")
 
       val summaryFutures = for (client <- scala.util.Random.shuffle(clients).take(clientCount).zipWithIndex)
@@ -223,8 +230,8 @@ object Program extends App with LazyLogging {
   }
 
   private def getClients(clients: Seq[Client]): Seq[Client] = {
-    if (allClients ) {
-      val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
+    if (allClients) {
+      val include = Source.fromFile(includeFile).getLines().toSeq
       clients.filter(c => include.contains(c.clinician.getOrElse("")))
     } else {
       val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
@@ -232,7 +239,7 @@ object Program extends App with LazyLogging {
     }
   }
 
-  private def printStats(clients: Seq[Client]) = {
+  private def printStatistics(clients: Seq[Client]) = {
     val exclude = Source.fromFile("/Volumes/USB DISK/exclude.txt").getLines().toSeq
     val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
     val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
