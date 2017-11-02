@@ -1,5 +1,6 @@
 import java.io.{File, PrintWriter}
 
+import com.typesafe.scalalogging.LazyLogging
 import org.openqa.selenium.remote.RemoteWebDriver
 import play.api.libs.json.{JsError, JsSuccess, Json}
 
@@ -23,7 +24,7 @@ case class TreatmentPlan(id: Option[Int], client_id: Option[String], treatment_p
   }
 }
 
-object TreatmentPlan {
+object TreatmentPlan extends LazyLogging {
   def buildOjbect(file: File): TreatmentPlan = {
     implicit val historyFormat = Json.reads[History]
     implicit val diagnosisCodeFormat = Json.reads[DiagnosisCode]
@@ -45,9 +46,11 @@ object TreatmentPlan {
     val url = s"https://office.mhpoffice.com/office/clients/treatment_plan?client=${client.id}"
     val download = FileDownload(file, url, Some(client.id))
 
-    FileDownloader.downloadFile(driver, download)
+    val status = FileDownloader.downloadFile(driver, download)
 
-    if (file.exists()) {
+    if (!status) logger.error(s"Treatment plan download failure for ${client.id}.")
+
+    if (status && file.exists()) {
       val json = Json.parse(scala.io.Source.fromFile(file).getLines().mkString)
       val pretty = Json.prettyPrint(json)
       new PrintWriter(file) {write(pretty); close()}
