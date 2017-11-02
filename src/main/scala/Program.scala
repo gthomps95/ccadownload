@@ -16,21 +16,19 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 object Program extends App with LazyLogging {
-  if (args.length < 4)
-    throw new Exception("username password threadCount includefile printStats")
+  if (args.length < 2)
+    throw new Exception("username password threadCount clientCount includefile printStats")
 
   val username = args(0)
   val password = args(1)
-  val threadCount = args(2).toInt
-  val includeFile = args(3)
-  val printStats = if (args.length > 4) args(4).toBoolean else false
+  val threadCount = if (args.length > 2) args(2).toInt else 1
+  val clientCount = if (args.length > 3) args(3).toInt else 10000
+  val includeFile = if (args.length > 4) Some(args(4)) else None
+  val printStats = if (args.length > 5) args(5).toBoolean else false
 
   val downloadAllData = true
   val downloadApptData = true
   val downloadApptComments = true
-  val allClients = true
-  val filterClients = true
-  val clientCount = 50000
 
   val ex = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
   implicit val ec = ExecutionContext.fromExecutor(ex)
@@ -64,10 +62,10 @@ object Program extends App with LazyLogging {
       val sw = Stopwatch.createStarted()
 
       var clients = ClientList.download(basedir)
-      clients = if (filterClients) getClients(clients) else clients
+      clients = filterClients(clients)
 
       /*
-      val ids = Array("PPT17104")
+      val ids = Array("PPT169")
       clients = clients.filter(c => ids.contains(c.id))
       */
 
@@ -169,7 +167,7 @@ object Program extends App with LazyLogging {
     val summaryFile = new File(s"$basedir/summary.csv")
     writeSummaryCsv(summaryFile, summaries)
 
-    val grouped = summaries.groupBy(cs => cs.client.clinician.getOrElse(""))
+    val grouped = summaries.groupBy(cs => cs.client.clinician.getOrElse("blank"))
     grouped.foreach(g => {
       val file = new File(s"$basedir/${g._1}/${g._1} - summary.csv")
       writeSummaryCsv(file, g._2)
@@ -182,7 +180,7 @@ object Program extends App with LazyLogging {
     for (summary <- summaries.filter(_.isSuccess)) {
       pw.print(Some(summary.client.id).getForCsv())
       pw.print(Some(summary.isActiveAfter.getOrElse(false).toString).getForCsv())
-      pw.print(summary.client.clinician.getForCsv())
+      pw.print(Some(summary.client.clinician.getOrElse("blank")).getForCsv())
       pw.print(summary.general.get.shortname.getForCsv())
       pw.print(summary.general.get.first.getForCsv())
       pw.print(summary.general.get.middle.getForCsv())
@@ -219,9 +217,9 @@ object Program extends App with LazyLogging {
     synchronized {
       val pw = new PrintWriter(new FileWriter(controlFile, true))
       if (summary.isSuccess) {
-        pw.println(s"$count, ${summary.client.id}, ${summary.isActiveBefore.get}, ${summary.isActiveAfter.get}, ${summary.elapsedSeconds}, success, ${summary.billingRecords.get.length}, ${summary.noteRecords.get.length}, ${summary.apptRecords.get.length}, ")
+        pw.println(s"$count, ${summary.client.clinician.getOrElse("blank")}, ${summary.client.id}, ${summary.isActiveBefore.get}, ${summary.isActiveAfter.get}, ${summary.elapsedSeconds}, success, ${summary.billingRecords.get.length}, ${summary.noteRecords.get.length}, ${summary.apptRecords.get.length}, ")
       } else {
-        pw.println(s"$count, ${summary.client.id}, , , ${summary.elapsedSeconds}, error, 0, 0, 0, ${summary.errorMessage.get} ")
+        pw.println(s"$count, ${summary.client.clinician.getOrElse("blank")}, ${summary.client.id}, , , ${summary.elapsedSeconds}, error, 0, 0, 0, ${summary.errorMessage.get} ")
       }
 
       pw.flush()
@@ -229,13 +227,12 @@ object Program extends App with LazyLogging {
     }
   }
 
-  private def getClients(clients: Seq[Client]): Seq[Client] = {
-    if (allClients) {
-      val include = Source.fromFile(includeFile).getLines().toSeq
-      clients.filter(c => include.contains(c.clinician.getOrElse("")))
-    } else {
-      val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
-      clients.filter(c => test.contains(c.id))
+  private def filterClients(clients: Seq[Client]): Seq[Client] = {
+    includeFile match {
+      case None => clients
+      case Some(file) =>
+        val include = Source.fromFile(file).getLines().toSeq
+        clients.filter(c => include.contains(c.clinician.getOrElse("blank")))
     }
   }
 
@@ -248,8 +245,8 @@ object Program extends App with LazyLogging {
     println(include.length)
     println(test.length)
 
-    val (excluded, notexcluded) = clients.partition(c => exclude.contains(c.clinician.getOrElse("")))
-    val (included, notincluded) = clients.partition(c => include.contains(c.clinician.getOrElse("")))
+    val (excluded, notexcluded) = clients.partition(c => exclude.contains(c.clinician.getOrElse("blank")))
+    val (included, notincluded) = clients.partition(c => include.contains(c.clinician.getOrElse("blank")))
     val totest = clients.filter(c => test.contains(c.id))
 
     println(notexcluded.length)
@@ -258,10 +255,10 @@ object Program extends App with LazyLogging {
     println(included.length)
     println(totest.length)
 
-    val excc = excluded.groupBy(c => c.clinician.getOrElse(""))
-    val nexcc = notexcluded.groupBy(c => c.clinician.getOrElse(""))
-    val incc = included.groupBy(c => c.clinician.getOrElse(""))
-    val nincc = notincluded.groupBy(c => c.clinician.getOrElse(""))
+    val excc = excluded.groupBy(c => c.clinician.getOrElse("blank"))
+    val nexcc = notexcluded.groupBy(c => c.clinician.getOrElse("blank"))
+    val incc = included.groupBy(c => c.clinician.getOrElse("blank"))
+    val nincc = notincluded.groupBy(c => c.clinician.getOrElse("blank"))
 
     println(s"excluded ${excc.keys.size}")
     println(s"not excluded ${nexcc.keys.size}")
@@ -280,7 +277,7 @@ object Program extends App with LazyLogging {
     println("Not included ****************************************")
     nincc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
-    val blank = clients.filter(c => c.clinician.getOrElse("") == "")
+    val blank = clients.filter(c => c.clinician.getOrElse("blank") == "")
     println(blank.length)
 
     println("Blank **************************************")

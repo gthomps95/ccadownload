@@ -10,7 +10,7 @@ object ClientDir {
   }
 
   def get(client: Client): String = {
-    val clientDir = s"$basedir/${client.clinician.getOrElse("none")}/${client.name} - ${client.id}".trim
+    val clientDir = s"$basedir/${client.clinician.getOrElse("blank")}/${client.name} - ${client.id}".trim
 
     val file = new File(clientDir)
     if (!file.exists())
