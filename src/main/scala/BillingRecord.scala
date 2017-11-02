@@ -22,11 +22,14 @@ object BillingRecordBuilder {
   def build(driver: RemoteWebDriver, client: Client): Seq[BillingRecord] = {
     driver.checkGetUrl(s"https://office.mhpoffice.com/office/client/${client.id}/billing")
 
-    val rows = driver.findElementsByXPath("//*[@id=\"content\"]/div[@class=\"reb-rows\"]/table/tbody/tr").asScala
-    val paths = (1 until rows.length + 1).map(index => "//*[@id=\"content\"]/div[5]/table/tbody/tr[" + index + "]")
+    val basePath = "//*[@id=\"content\"]/div[@class=\"reb-rows\"]/table/tbody/tr"
+    val rows = driver.findElementsByXPath(basePath).asScala
+    val paths = (1 until rows.length + 1).map(index => s"$basePath[" + index + "]")
 
     for (path <- paths) yield buildRecord(driver, client, path)
   }
+
+  //*[@id="content"]/div[3]/table/tbody/tr[1]/td[2]/span[1]
 
   private def buildRecord(driver: RemoteWebDriver, client: Client, path: String) = {
     val dateStr = driver.getAttributeFromXPath(path + "/td[2]/span[2]", "innerHTML")
