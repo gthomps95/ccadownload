@@ -62,15 +62,16 @@ object Program extends App with LazyLogging {
       val sw = Stopwatch.createStarted()
 
       var clients = ClientList.download(basedir)
+
+      if (printStats) printStatistics(clients)
+
       clients = filterClients(clients)
+      logger.info(s"${clients.length}")
 
       /*
       val ids = Array("PPT169")
       clients = clients.filter(c => ids.contains(c.id))
       */
-
-      if (printStats) printStatistics(clients)
-      logger.info(s"${clients.length}")
 
       val summaryFutures = for (client <- scala.util.Random.shuffle(clients).take(clientCount).zipWithIndex)
         yield Future { executeClient(client._1, client._2 + 1) }
@@ -237,39 +238,20 @@ object Program extends App with LazyLogging {
   }
 
   private def printStatistics(clients: Seq[Client]) = {
-    val exclude = Source.fromFile("/Volumes/USB DISK/exclude.txt").getLines().toSeq
-    val include = Source.fromFile("/Volumes/USB DISK/include.txt").getLines().toSeq
-    val test = Source.fromFile("/Volumes/USB DISK/test.txt").getLines().toSeq
+    val include = Source.fromFile(new File(includeFile.get)).getLines().toSeq
 
-    println(exclude.length)
     println(include.length)
-    println(test.length)
 
-    val (excluded, notexcluded) = clients.partition(c => exclude.contains(c.clinician.getOrElse("blank")))
     val (included, notincluded) = clients.partition(c => include.contains(c.clinician.getOrElse("blank")))
-    val totest = clients.filter(c => test.contains(c.id))
 
-    println(notexcluded.length)
-    println(excluded.length)
     println(notincluded.length)
     println(included.length)
-    println(totest.length)
 
-    val excc = excluded.groupBy(c => c.clinician.getOrElse("blank"))
-    val nexcc = notexcluded.groupBy(c => c.clinician.getOrElse("blank"))
     val incc = included.groupBy(c => c.clinician.getOrElse("blank"))
     val nincc = notincluded.groupBy(c => c.clinician.getOrElse("blank"))
 
-    println(s"excluded ${excc.keys.size}")
-    println(s"not excluded ${nexcc.keys.size}")
     println(s"included ${incc.keys.size}")
     println(s"not included ${nincc.keys.size}")
-
-    println("Excluded ****************************************")
-    excc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
-
-    println("Not excluded ****************************************")
-    nexcc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
 
     println("Included ****************************************")
     incc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
