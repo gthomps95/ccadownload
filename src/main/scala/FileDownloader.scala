@@ -18,6 +18,8 @@ object FileDownloader extends LazyLogging {
 
       val url = new URL(download.url)
       val connection = url.openConnection().asInstanceOf[HttpURLConnection]
+      connection.setReadTimeout(180000)
+      connection.setConnectTimeout(180000)
       connection.setRequestMethod("GET")
 
       if (download.url.startsWith("https://office.mhpoffice.com")) connection.setRequestProperty("Cookie", sessionCookie)

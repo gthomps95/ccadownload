@@ -54,8 +54,8 @@ object ClientActivate extends LazyLogging {
     val url = new URL("https://office.mhpoffice.com/api/client/deactivate")
     val connection = url.openConnection().asInstanceOf[HttpURLConnection]
 
-    connection.setReadTimeout(10000)
-    connection.setConnectTimeout(15000)
+    connection.setReadTimeout(180000)
+    connection.setConnectTimeout(180000)
     connection.setRequestMethod("POST")
     connection.setRequestProperty("Cookie", sessionCookie)
     connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Safari/604.1.38")
