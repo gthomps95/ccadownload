@@ -50,7 +50,7 @@ object FileDownloader extends LazyLogging {
     }
     catch {
       case e: Exception =>
-        logger.error("Error in file download", e)
+        logger.error(s"Error in file download for client ${download.clientId}.  Dest is ${download.destFile.getAbsolutePath}.", e)
         false
     }
     finally {
