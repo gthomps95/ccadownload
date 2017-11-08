@@ -64,8 +64,19 @@ object NoteRecordBuilder {
   def build(driver: RemoteWebDriver, client: Client): Seq[NoteRecord] = {
     driver.checkGetUrl(s"https://office.mhpoffice.com/office/client/${client.id}/note")
 
-    val rows = driver.findElementsByXPath("//*[@id=\"content\"]/div[5]/table/tbody/tr").asScala
-    val paths = (1 until rows.length + 1).map(index => "//*[@id=\"content\"]/div[5]/table/tbody/tr[" + index + "]")
+
+    ////*[@id="content"]/div[3]/table/tbody/tr[1]
+    var divIndex = 5
+    var basePath = "//*[@id=\"content\"]/div[" + divIndex + "]/table/tbody/tr"
+    var rows = driver.findElementsByXPath(basePath).asScala
+
+    if (rows.isEmpty) {
+      divIndex = 3
+      basePath = "//*[@id=\"content\"]/div[" + divIndex + "]/table/tbody/tr"
+      rows = driver.findElementsByXPath(basePath).asScala
+    }
+
+    val paths = (1 until rows.length + 1).map(index => "//*[@id=\"content\"]/div[" + divIndex + "]/table/tbody/tr[" + index + "]")
 
     val records = (for (path <- paths) yield buildRecord(driver, client, path)).flatten
     for (record <- records) yield applyDocumentUrl(driver, record)
