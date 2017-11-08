@@ -69,7 +69,7 @@ object Program extends App with LazyLogging {
       logger.info(s"${clients.length}")
 
       /*
-      val ids = Array("PPT169")
+      val ids = Array("PPT22728")
       clients = clients.filter(c => ids.contains(c.id))
       */
 
@@ -141,7 +141,8 @@ object Program extends App with LazyLogging {
         }
         AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
 
-        val treatmentPlan = TreatmentPlan.downloadTreatmenPlan(driver, client)
+        val treatmentPlans = TreatmentPlan.downloadTreatmenPlans(driver, client)
+        TreatmentPlanRecordOutput.output(new File(s"$clientDir/treatment_plans.csv"), treatmentPlans)
 
         if (!isActiveBefore)
           ClientActivate.deactivate(driver, client)
@@ -150,12 +151,12 @@ object Program extends App with LazyLogging {
         sw.stop()
 
         ClientSummary(client, Some(isActiveBefore), Some(isActiveAfter), Some(general), Some(provider),
-          Some(contact), treatmentPlan, Some(billRecords), Some(noteRecords), Some(apptRecords), isSuccess = true, None, sw.elapsed(TimeUnit.SECONDS))
+          Some(contact), treatmentPlans, Some(billRecords), Some(noteRecords), Some(apptRecords), isSuccess = true, None, sw.elapsed(TimeUnit.SECONDS))
       } catch {
         case e: Exception =>
           sw.stop()
           logger.error(s"Error in client ${client.id}.", e)
-          ClientSummary(client, None, None, None, None, None, None, None, None, None, isSuccess = false, Some(e.getMessage), sw.elapsed(TimeUnit.SECONDS))
+          ClientSummary(client, None, None, None, None, None, Seq(None), None, None, None, isSuccess = false, Some(e.getMessage), sw.elapsed(TimeUnit.SECONDS))
       } finally {
         driverO.foreach(pool.release)
       }
@@ -190,7 +191,7 @@ object Program extends App with LazyLogging {
       pw.print(summary.general.get.gender.getForCsv())
       pw.print(summary.general.get.marital.getForCsv())
       pw.print(summary.general.get.ssn.getForCsv())
-      pw.print(summary.treatmentPlan.flatMap(_.getIcd9Codes).getForCsv())
+      pw.print(summary.treatmentPlans.flatten.headOption.flatMap(_.getIcd9Codes).getForCsv())
       pw.print(summary.lastApptDate.map(d => d.format(DateTimeFormatter.ofPattern("MM/dd/yyyy"))).getForCsv())
       pw.print(summary.general.get.address1.getForCsv())
       pw.print(summary.general.get.address2.getForCsv())
@@ -271,7 +272,7 @@ object Program extends App with LazyLogging {
 
 case class ClientSummary(client: Client, isActiveBefore: Option[Boolean], isActiveAfter: Option[Boolean],
                          general: Option[ClientGeneral], provider: Option[ClientProvider], contact: Option[ClientContact],
-                         treatmentPlan: Option[TreatmentPlan],
+                         treatmentPlans: Seq[Option[TreatmentPlan]],
                          billingRecords: Option[Seq[BillingRecord]], noteRecords: Option[Seq[NoteRecord]],
                          apptRecords: Option[Seq[AppointmentRecord]],
                          isSuccess: Boolean, errorMessage: Option[String] = None,
