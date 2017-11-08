@@ -87,9 +87,9 @@ object Program extends App with LazyLogging {
       }
 
       writeSummaryCsv(summaries.filter(_.isSuccess))
-      BillingRecordOutput.output(new File(s"$basedir/billing.csv"), allBill)
-      NoteRecordOutput.output(new File(s"$basedir/notes.csv"), allNotes)
-      AppointmentRecordOutput.output(new File(s"$basedir/appointments.csv"), allAppt)
+      BillingRecordOutput.output(new File(s"$basedir/all_billing.csv"), allBill)
+      NoteRecordOutput.output(new File(s"$basedir/all_notes.csv"), allNotes)
+      AppointmentRecordOutput.output(new File(s"$basedir/all_appts.csv"), allAppt)
 
       sw.stop()
       logger.info(s"${summaries.length} executed in ${sw.elapsed(TimeUnit.SECONDS)} seconds.")
