@@ -85,9 +85,11 @@ case class PathAndType(atype: String, path: String)
 object AppointmentRecordOutput {
   def output(dest: File, records: Seq[AppointmentRecord]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
-    pw.println("id,date,time,status,apptType,comments")
+    pw.println("clinician,clientid,id,date,time,status,apptType,comments")
 
     for (record <- records) {
+      pw.print(record.client.clinician.getForCsv())
+      pw.print(Some(record.client.id).getForCsv())
       pw.print(record.id.getForCsv())
       pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
       pw.print(record.time.getForCsv())

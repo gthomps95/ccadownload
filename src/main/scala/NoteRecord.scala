@@ -129,9 +129,11 @@ object NoteRecordBuilder {
 object NoteRecordOutput {
   def output(dest: File, records: Seq[NoteRecord]): Unit = {
     val pw = new PrintWriter(new FileWriter(dest, true))
-    pw.println("id,date,title,form,filename,deleted,result")
+    pw.println("clinician,clientid,id,date,title,form,filename,deleted,result")
 
     for (record <- records) {
+      pw.print(record.client.clinician.getForCsv())
+      pw.print(Some(record.client.id).getForCsv())
       pw.print(record.id.getForCsv())
       pw.print(record.date.map(d => DateTimeFormatter.ofPattern("MM/dd/yyyy").format(d)).getForCsv())
       pw.print(record.title.getForCsv())

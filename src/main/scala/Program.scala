@@ -51,6 +51,10 @@ object Program extends App with LazyLogging {
   val basedir = s"${System.getProperty("user.home")}/CCA/download_$now"
   new File(basedir).mkdirs()
 
+  var allAppt = Seq[AppointmentRecord]()
+  var allBill = Seq[BillingRecord]()
+  var allNotes = Seq[NoteRecord]()
+
   val controlFile = new File(s"$basedir/control.csv")
   ClientDir.setBasedir(basedir)
 
@@ -69,7 +73,7 @@ object Program extends App with LazyLogging {
       logger.info(s"${clients.length}")
 
       /*
-      val ids = Array("PPT22728")
+      val ids = Array("PPT10454")
       clients = clients.filter(c => ids.contains(c.id))
       */
 
@@ -83,6 +87,9 @@ object Program extends App with LazyLogging {
       }
 
       writeSummaryCsv(summaries.filter(_.isSuccess))
+      BillingRecordOutput.output(new File(s"$basedir/billing.csv"), allBill)
+      NoteRecordOutput.output(new File(s"$basedir/notes.csv"), allNotes)
+      AppointmentRecordOutput.output(new File(s"$basedir/appointments.csv"), allAppt)
 
       sw.stop()
       logger.info(s"${summaries.length} executed in ${sw.elapsed(TimeUnit.SECONDS)} seconds.")
@@ -127,6 +134,7 @@ object Program extends App with LazyLogging {
           write(Json.prettyPrint(Json.toJson(billRecords))); close()
         }
         BillingRecordOutput.output(new File(s"$clientDir/billing.csv"), billRecords)
+        allBill = allBill ++ billRecords
 
         var noteRecords = if (downloadAllData) NoteRecordBuilder.build(driver, client) else Seq[NoteRecord]()
         noteRecords = NoteRecordDownloader.download(driver, noteRecords)
@@ -134,12 +142,14 @@ object Program extends App with LazyLogging {
           write(Json.prettyPrint(Json.toJson(noteRecords))); close()
         }
         NoteRecordOutput.output(new File(s"$clientDir/notes.csv"), noteRecords)
+        allNotes = allNotes ++ noteRecords
 
         val apptRecords = if (downloadAllData || downloadApptData) AppointmentRecordBuilder.build(driver, client, downloadApptComments) else Seq[AppointmentRecord]()
         new PrintWriter(s"$clientDir/appt.json") {
           write(Json.prettyPrint(Json.toJson(apptRecords))); close()
         }
         AppointmentRecordOutput.output(new File(s"$clientDir/appointments.csv"), apptRecords)
+        allAppt = allAppt ++ apptRecords
 
         val treatmentPlans = TreatmentPlan.downloadTreatmenPlans(driver, client)
         TreatmentPlanRecordOutput.output(new File(s"$clientDir/treatment_plans.csv"), treatmentPlans)
