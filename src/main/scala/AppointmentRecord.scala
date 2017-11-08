@@ -25,7 +25,7 @@ object AppointmentRecordBuilder {
     driver.checkGetUrl(s"https://office.mhpoffice.com/office/client/${client.id}/schedule#showFuture")
 
     val upcomingRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[5]/div[2]/div").asScala
-    val upcomingPaths = (1 until upcomingRows.length + 1).map(index => PathAndType("Upcoming", "//*[@id=\"content\"]/div[5]/div[3]/div[" + index + "]"))
+    val upcomingPaths = (1 until upcomingRows.length + 1).map(index => PathAndType("Upcoming", "//*[@id=\"content\"]/div[5]/div[2]/div[" + index + "]"))
 
     var pastDiv = 5
     var pastRows = driver.findElementsByXPath("//*[@id=\"content\"]/div[" + pastDiv + "]/div[3]/div").asScala
