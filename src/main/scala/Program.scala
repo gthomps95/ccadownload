@@ -73,7 +73,7 @@ object Program extends App with LazyLogging {
       logger.info(s"${clients.length}")
 
       /*
-      val ids = Array("PPT10454")
+      val ids = Array("PPT21268")
       clients = clients.filter(c => ids.contains(c.id))
       */
 
@@ -251,30 +251,30 @@ object Program extends App with LazyLogging {
   private def printStatistics(clients: Seq[Client]) = {
     val include = Source.fromFile(new File(includeFile.get)).getLines().toSeq
 
-    println(include.length)
+    logger.info(include.length + "")
 
     val (included, notincluded) = clients.partition(c => include.contains(c.clinician.getOrElse("blank")))
 
-    println(notincluded.length)
-    println(included.length)
+    logger.info(notincluded.length + "")
+    logger.info(included.length + "")
 
     val incc = included.groupBy(c => c.clinician.getOrElse("blank"))
     val nincc = notincluded.groupBy(c => c.clinician.getOrElse("blank"))
 
-    println(s"included ${incc.keys.size}")
-    println(s"not included ${nincc.keys.size}")
+    logger.info(s"included ${incc.keys.size}")
+    logger.info(s"not included ${nincc.keys.size}")
 
-    println("Included ****************************************")
-    incc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
+    logger.info("Included ****************************************")
+    incc.toList.sortWith(_._1 < _._1).foreach(k => logger.info(s"${k._1} - ${k._2.length}"))
 
-    println("Not included ****************************************")
-    nincc.toList.sortWith(_._1 < _._1).foreach(k => println(s"${k._1} - ${k._2.length}"))
+    logger.info("Not included ****************************************")
+    nincc.toList.sortWith(_._1 < _._1).foreach(k => logger.info(s"${k._1} - ${k._2.length}"))
 
     val blank = clients.filter(c => c.clinician.getOrElse("blank") == "")
-    println(blank.length)
+    logger.info(blank.length + "")
 
-    println("Blank **************************************")
-    blank.map(c => s"${c.id} - ${c.name}").foreach(println)
+    logger.info("Blank **************************************")
+    blank.map(c => s"${c.id} - ${c.name}").foreach(s => logger.info(s))
 
     throw new Exception("stop")
   }
